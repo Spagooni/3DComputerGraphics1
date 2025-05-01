@@ -12,12 +12,16 @@ public class Render {
             this.x = x; this.y = y; this.z = z;
         }
 
+        public Vec3f add(Vec3f v) {
+            return new Vec3f(x + v.x, y + v.y, z + v.z);
+        }
+
         public Vec3f sub(Vec3f v) {
             return new Vec3f(x - v.x, y - v.y, z - v.z);
         }
 
-        public Vec3f add(Vec3f v) {
-            return new Vec3f(x + v.x, y + v.y, z + v.z);
+        public Vec3f mul(float scalar) {
+            return new Vec3f(x * scalar, y * scalar, z * scalar);
         }
 
         public float dot(Vec3f v) {
@@ -25,12 +29,12 @@ public class Render {
         }
 
         public Vec3f normalize() {
-            float length = (float)Math.sqrt(x*x + y*y + z*z);
-            return new Vec3f(x/length, y/length, z/length);
+            float length = (float)Math.sqrt(x * x + y * y + z * z);
+            return new Vec3f(x / length, y / length, z / length);
         }
 
-        public Vec3f mul(float scalar) {
-            return new Vec3f(x * scalar, y * scalar, z * scalar);
+        public Vec3f mul(Vec3f v) {
+            return new Vec3f(x * v.x, y * v.y, z * v.z);
         }
 
         public byte[] toRGBBytes() {
@@ -42,8 +46,20 @@ public class Render {
     }
 
     class Material {
-        Vec3f color;
-        public Material(Vec3f color) { this.color = color; }
+        Vec3f diffuseColor;
+        public Material(Vec3f color) {
+            this.diffuseColor = color;
+        }
+    }
+
+    class Light {
+        Vec3f position;
+        float intensity;
+
+        public Light(Vec3f position, float intensity) {
+            this.position = position;
+            this.intensity = intensity;
+        }
     }
 
     class Sphere {
@@ -86,26 +102,39 @@ public class Render {
         }
     }
 
-    HitInfo sceneIntersect(Vec3f orig, Vec3f dir, Sphere[] spheres) {
-        float spheresDist = Float.MAX_VALUE;
-        HitInfo hitInfo = null;
+    Light[] lights = new Light[] {
+        new Light(new Vec3f(-20, 20, 20), 1.5f),
+        new Light(new Vec3f(30, 50, -25), 1.8f),
+        new Light(new Vec3f(30, 20, 30), 1.7f)
+    };
 
+    HitInfo sceneIntersect(Vec3f orig, Vec3f dir, Sphere[] spheres) {
+        float closestDist = Float.MAX_VALUE;
+        HitInfo hit = null;
         for (Sphere sphere : spheres) {
             float[] dist = new float[1];
-            if (sphere.rayIntersect(orig, dir, dist) && dist[0] < spheresDist) {
-                spheresDist = dist[0];
-                Vec3f hit = orig.add(dir.mul(dist[0]));
-                Vec3f N = hit.sub(sphere.center).normalize();
-                hitInfo = new HitInfo(hit, N, sphere.material, dist[0]);
+            if (sphere.rayIntersect(orig, dir, dist) && dist[0] < closestDist) {
+                Vec3f point = orig.add(dir.mul(dist[0]));
+                Vec3f normal = point.sub(sphere.center).normalize();
+                hit = new HitInfo(point, normal, sphere.material, dist[0]);
+                closestDist = dist[0];
             }
         }
-        return hitInfo;
+        return hit;
     }
 
     Vec3f castRay(Vec3f orig, Vec3f dir, Sphere[] spheres) {
         HitInfo hit = sceneIntersect(orig, dir, spheres);
-        if (hit == null) return new Vec3f(0.2f, 0.7f, 0.8f); // background
-        return hit.material.color;
+        if (hit == null)
+            return new Vec3f(0.2f, 0.7f, 0.8f); // background
+
+        float diffuseIntensity = 0f;
+        for (Light light : lights) {
+            Vec3f lightDir = light.position.sub(hit.point).normalize();
+            diffuseIntensity += light.intensity * Math.max(0f, hit.normal.dot(lightDir));
+        }
+
+        return hit.material.diffuseColor.mul(diffuseIntensity);
     }
 
     void render(Sphere[] spheres) {
