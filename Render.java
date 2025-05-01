@@ -16,6 +16,10 @@ public class Render {
             return new Vec3f(x - v.x, y - v.y, z - v.z);
         }
 
+        public Vec3f add(Vec3f v) {
+            return new Vec3f(x + v.x, y + v.y, z + v.z);
+        }
+
         public float dot(Vec3f v) {
             return x * v.x + y * v.y + z * v.z;
         }
@@ -23,6 +27,10 @@ public class Render {
         public Vec3f normalize() {
             float length = (float)Math.sqrt(x*x + y*y + z*z);
             return new Vec3f(x/length, y/length, z/length);
+        }
+
+        public Vec3f mul(float scalar) {
+            return new Vec3f(x * scalar, y * scalar, z * scalar);
         }
 
         public byte[] toRGBBytes() {
@@ -33,13 +41,20 @@ public class Render {
         }
     }
 
+    class Material {
+        Vec3f color;
+        public Material(Vec3f color) { this.color = color; }
+    }
+
     class Sphere {
         Vec3f center;
         float radius;
+        Material material;
 
-        public Sphere(Vec3f center, float radius) {
+        public Sphere(Vec3f center, float radius, Material material) {
             this.center = center;
             this.radius = radius;
+            this.material = material;
         }
 
         boolean rayIntersect(Vec3f orig, Vec3f dir, float[] t0Out) {
@@ -57,22 +72,50 @@ public class Render {
         }
     }
 
-    Vec3f castRay(Vec3f orig, Vec3f dir, Sphere sphere) {
-        float[] t0 = new float[1];
-        if (!sphere.rayIntersect(orig, dir, t0)) {
-            return new Vec3f(0.2f, 0.7f, 0.8f); // background
+    class HitInfo {
+        Vec3f point;
+        Vec3f normal;
+        Material material;
+        float distance;
+
+        public HitInfo(Vec3f point, Vec3f normal, Material material, float distance) {
+            this.point = point;
+            this.normal = normal;
+            this.material = material;
+            this.distance = distance;
         }
-        return new Vec3f(0.4f, 0.4f, 0.3f); // sphere color
     }
 
-    void render(Sphere sphere) {
+    HitInfo sceneIntersect(Vec3f orig, Vec3f dir, Sphere[] spheres) {
+        float spheresDist = Float.MAX_VALUE;
+        HitInfo hitInfo = null;
+
+        for (Sphere sphere : spheres) {
+            float[] dist = new float[1];
+            if (sphere.rayIntersect(orig, dir, dist) && dist[0] < spheresDist) {
+                spheresDist = dist[0];
+                Vec3f hit = orig.add(dir.mul(dist[0]));
+                Vec3f N = hit.sub(sphere.center).normalize();
+                hitInfo = new HitInfo(hit, N, sphere.material, dist[0]);
+            }
+        }
+        return hitInfo;
+    }
+
+    Vec3f castRay(Vec3f orig, Vec3f dir, Sphere[] spheres) {
+        HitInfo hit = sceneIntersect(orig, dir, spheres);
+        if (hit == null) return new Vec3f(0.2f, 0.7f, 0.8f); // background
+        return hit.material.color;
+    }
+
+    void render(Sphere[] spheres) {
         Vec3f[] framebuffer = new Vec3f[width * height];
         for (int j = 0; j < height; j++) {
             for (int i = 0; i < width; i++) {
                 float x = (2 * (i + 0.5f) / width - 1) * (float)Math.tan(fov / 2) * width / height;
                 float y = -(2 * (j + 0.5f) / height - 1) * (float)Math.tan(fov / 2);
                 Vec3f dir = new Vec3f(x, y, -1).normalize();
-                framebuffer[i + j * width] = castRay(new Vec3f(0, 0, 0), dir, sphere);
+                framebuffer[i + j * width] = castRay(new Vec3f(0, 0, 0), dir, spheres);
             }
         }
         renderToFile(framebuffer);
@@ -80,8 +123,7 @@ public class Render {
 
     void renderToFile(Vec3f[] framebuffer) {
         try (FileOutputStream fos = new FileOutputStream("out.ppm")) {
-            String header = "P6\n" + width + " " + height + "\n255\n";
-            fos.write(header.getBytes());
+            fos.write(("P6\n" + width + " " + height + "\n255\n").getBytes());
             for (Vec3f color : framebuffer) {
                 fos.write(color.toRGBBytes());
             }
@@ -92,7 +134,17 @@ public class Render {
 
     public static void main(String[] args) {
         Render render = new Render();
-        Sphere sphere = render.new Sphere(render.new Vec3f(-3, 0, -16), 2);
-        render.render(sphere);
+
+        Material ivory = render.new Material(render.new Vec3f(0.4f, 0.4f, 0.3f));
+        Material red = render.new Material(render.new Vec3f(0.3f, 0.1f, 0.1f));
+
+        Sphere[] spheres = new Sphere[] {
+            render.new Sphere(render.new Vec3f(-3, 0, -16), 2, ivory),
+            render.new Sphere(render.new Vec3f(-1.0f, -1.5f, -12), 2, red),
+            render.new Sphere(render.new Vec3f(1.5f, -0.5f, -18), 3, red),
+            render.new Sphere(render.new Vec3f(7, 5, -18), 4, ivory)
+        };
+
+        render.render(spheres);
     }
 }
